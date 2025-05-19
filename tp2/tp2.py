@@ -95,6 +95,35 @@ def carrega_processa_com_ruido(
     return X_train_scaled, X_test_scaled, y_train_aug, y_test
 
 
+def carrega_processa_regressao(
+        test_size: float = 0.2,
+        random_state: int | None = 42,
+):
+    raw = load_breast_cancer()
+    df = pd.DataFrame(raw.data, columns=raw.feature_names)
+
+    y = df["mean area"]
+    X = df.drop(columns=["mean area"])
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=test_size, random_state=random_state
+    )
+
+    scaler = StandardScaler()
+    X_train_scaled = pd.DataFrame(
+        scaler.fit_transform(X_train),
+        columns=X_train.columns,
+        index=X_train.index,
+    )
+    X_test_scaled = pd.DataFrame(
+        scaler.transform(X_test),
+        columns=X_test.columns,
+        index=X_test.index,
+    )
+
+    return X_train_scaled, X_test_scaled, y_train, y_test
+
+
 def treina_avalia_lr(
         X_train: pd.DataFrame,
         X_test: pd.DataFrame,
@@ -106,7 +135,7 @@ def treina_avalia_lr(
     model.fit(X_train, y_train)
 
     y_pred_test = model.predict(X_test)
-    residuals = pd.Series(y_test - y_pred_test, index=y_test.index, name="residual")
+    residuals = pd.Series(y_test - y_pred_test, index=y_test.index)
 
     mse = mean_squared_error(y_test, y_pred_test)
     rmse = np.sqrt(mse)
@@ -123,13 +152,26 @@ def treina_avalia_lr(
     }
 
     if verbose:
-        print("\n▸ Regressão Linear")
-        print(f"MAE   : {mae:.4f}")
-        print(f"MSE   : {mse:.4f}")
-        print(f"RMSE  : {rmse:.4f}")
+        print("\n▸ Regressão Linear – alvo: mean area")
+        print(f"MAE   : {mae:.2f}")
+        print(f"RMSE  : {rmse:.2f}")
         print(f"R²    : {r2:.4f}")
-        print(f"Média dos resíduos : {metrics['mean_residual']:.5f}")
-        print(f"Desvio-padrão res. : {metrics['std_residual']:.5f}")
+        print(f"Média resíduo : {metrics['mean_residual']:.2f}")
+        print(f"DP resíduos   : {metrics['std_residual']:.2f}")
+
+    fig, ax = plt.subplots(1, 2, figsize=(10, 4))
+    ax[0].scatter(y_pred_test, residuals, alpha=0.6)
+    ax[0].axhline(0, color="red", lw=1)
+    ax[0].set_xlabel("ŷ (predito)")
+    ax[0].set_ylabel("resíduo")
+    ax[0].set_title("Resíduos vs. valores preditos")
+
+    ax[1].hist(residuals, bins=20, edgecolor="k")
+    ax[1].set_xlabel("resíduo")
+    ax[1].set_ylabel("freq.")
+    ax[1].set_title("Distribuição dos resíduos")
+    plt.tight_layout()
+    plt.savefig("regressaoLinear.png")
 
     return model, metrics, residuals
 
@@ -142,7 +184,6 @@ def treina_avalia_knn(
         k: int = 5,
         verbose: bool = True,
 ):
-
     model = KNeighborsClassifier(n_neighbors=k)
     model.fit(X_train, y_train)
 
@@ -199,7 +240,10 @@ def analisa_var_k(
         plt.plot(df["k"], df["test_accuracy"], "o-", label="Teste")
         plt.xlabel("Número de vizinhos (k)")
         plt.ylabel("Acurácia")
-        plt.title("KNN – Acurácia vs. k")
+        if com_ruido:
+            plt.title("KNN – Acurácia vs. k - COM RUÍDO")
+        else:
+            plt.title("KNN – Acurácia vs. k - SEM RUÍDO")
         plt.xticks(df["k"])
         plt.grid(True, ls=":")
         plt.legend()
@@ -224,10 +268,6 @@ if __name__ == "__main__":
     print(f"\nMelhor k = {best_k} | acurácia teste = {best_row['test_accuracy']:.4f}")
 
     _, _ = treina_avalia_knn(X_train_scaled, X_test_scaled, y_train, y_test, k=best_k)
-    _, lr_metrics, lr_res = treina_avalia_lr(X_train_scaled,
-                                             X_test_scaled,
-                                             y_train, y_test,
-                                             verbose=True)
 
     print("=========================Resultado COM ruido==========================")
     df_k_ruido = analisa_var_k(X_train_scaled_ruido, X_test_scaled_ruido, y_train_ruido, y_test_ruido, k_min=1,
@@ -238,7 +278,9 @@ if __name__ == "__main__":
     print(f"\nMelhor k = {best_k_ruido} | acurácia teste = {best_row_ruido['test_accuracy']:.4f}")
 
     _, _ = treina_avalia_knn(X_train_scaled_ruido, X_test_scaled_ruido, y_train_ruido, y_test_ruido, k=best_k_ruido)
-    _, lr_metrics_ruido, lr_res_ruido = treina_avalia_lr(X_train_scaled_ruido,
-                                                         X_test_scaled_ruido,
-                                                         y_train_ruido, y_test_ruido,
-                                                         verbose=True)
+
+    print("=========================REGRESSÃO LINEAR==========================")
+    Xtr_r, Xte_r, ytr_r, yte_r = carrega_processa_regressao()
+    _, reg_metrics, _ = treina_avalia_lr(
+        Xtr_r, Xte_r, ytr_r, yte_r, verbose=True
+    )
